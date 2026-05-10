@@ -24,6 +24,19 @@ async function readJson(request) {
   }
 }
 
+function isIpAddress(value) {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(String(value || '').trim());
+}
+
+function serverDisplayName(server) {
+  return isIpAddress(server.name) || isIpAddress(server.ip) ? `服务器 #${server.id}` : server.name;
+}
+
+function publicServer(server) {
+  const { ip: _ip, ...rest } = server;
+  return { ...rest, name: serverDisplayName(server) };
+}
+
 export async function handleRequest(request, env) {
   const url = new URL(request.url);
   const repo = new D1Repository(env.DB);
@@ -41,7 +54,7 @@ export async function handleRequest(request, env) {
   }
 
   if (url.pathname === '/api/status' && request.method === 'GET') {
-    return json({ servers: await repo.listStatus() });
+    return json({ servers: (await repo.listStatus()).map(publicServer) });
   }
 
   if (!url.pathname.startsWith('/api/admin/')) return json({ error: 'NOT_FOUND' }, 404);
@@ -52,8 +65,8 @@ export async function handleRequest(request, env) {
     return json({
       settings: { ...settings, pushplus_token: settings.pushplus_token ? '已配置' : '' },
       providers: await repo.listProviders(),
-      servers: await repo.listServers(),
-      status: await repo.listStatus(),
+      servers: (await repo.listServers()).map(publicServer),
+      status: (await repo.listStatus()).map(publicServer),
     });
   }
 
@@ -65,10 +78,13 @@ export async function handleRequest(request, env) {
 
   if (url.pathname === '/api/admin/providers' && request.method === 'POST') {
     const body = await readJson(request);
-    if (!body?.name || !body?.api_base_url || !body?.api_account || !body?.api_password) {
+    if (!body?.name || !body?.api_base_url || !body?.api_account) {
       return json({ error: 'INVALID_PROVIDER' }, 400);
     }
-    await repo.upsertProvider(body, Math.floor(Date.now() / 1000));
+    const existing = await repo.getProvider(body.name);
+    const apiPassword = body.api_password || existing?.api_password || '';
+    if (!apiPassword) return json({ error: 'INVALID_PROVIDER' }, 400);
+    await repo.upsertProvider({ ...body, api_password: apiPassword }, Math.floor(Date.now() / 1000));
     return json({ ok: true });
   }
 
