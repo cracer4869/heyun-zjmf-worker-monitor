@@ -15,13 +15,86 @@ function eventLevel(newState) {
   return 'info';
 }
 
+const STATE_TEXT = {
+  healthy: '正常',
+  suspect: '可疑',
+  down: '宕机',
+  rebooting: '处理中',
+  recovering: '恢复中',
+};
+
+const LEVEL_TEXT = {
+  info: '信息',
+  warning: '警告',
+  critical: '严重',
+};
+
+const METHOD_TEXT = {
+  api_only: '魔方财务 API',
+  http: 'HTTP(S)',
+  tcp: 'TCP 端口',
+  http_then_api: 'HTTP(S) + API 复核',
+  tcp_then_api: 'TCP + API 复核',
+  service_then_power: '三步检测：HTTP(S) + TCP + API',
+};
+
+function formatNotifyTime(now, timezone = 'Asia/Shanghai') {
+  return new Date(now * 1000).toLocaleString('zh-CN', {
+    timeZone: timezone,
+    hour12: false,
+  });
+}
+
+function actionHint(label, nextRuntime, settings) {
+  if (label === '检测异常') return `继续观察，连续失败 ${settings.suspect_threshold} 次后才会自动处理`;
+  if (label === '确认宕机') return '已确认异常，准备按电源状态自动处理';
+  if (label === '触发开机') return '正在发送开机指令';
+  if (label === '触发重启') return '正在发送重启指令';
+  if (label === '恢复成功') return '服务已恢复正常';
+  if (label === '恢复超时') return '恢复超时，等待下一轮处理';
+  return nextRuntime.state === 'healthy' ? '无需处理' : '持续监控中';
+}
+
+function isIpAddress(value) {
+  return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(String(value || '').trim());
+}
+
+function displayServerName(server) {
+  return isIpAddress(server.name) || isIpAddress(server.ip) ? `服务器 #${server.id}` : server.name;
+}
+
+function buildTransitionNotice(server, oldState, nextRuntime, now, label, level, settings) {
+  const name = displayServerName(server);
+  const method = METHOD_TEXT[server.check_method || 'api_only'] || server.check_method || 'api_only';
+  const stateText = `${STATE_TEXT[oldState] || oldState} -> ${STATE_TEXT[nextRuntime.state] || nextRuntime.state}`;
+  const limit = server.daily_reboot_limit || settings.default_daily_reboot_limit;
+  const rebootText = limit <= 0 ? `${nextRuntime.reboot_count_today || 0} / 不限` : `${nextRuntime.reboot_count_today || 0} / ${limit}`;
+  return {
+    title: `【${LEVEL_TEXT[level] || level}】${name} - ${label || STATE_TEXT[nextRuntime.state] || nextRuntime.state}`,
+    message: [
+      `事件：${label || '状态变更'}`,
+      `监控项：${name} (#${server.id})`,
+      `严重级别：${LEVEL_TEXT[level] || level}`,
+      `状态变化：${stateText}`,
+      `检测方式：${method}`,
+      `最近结果：${nextRuntime.last_status_value || '暂无'}`,
+      `连续失败：${nextRuntime.consecutive_failures || 0} / ${settings.suspect_threshold}`,
+      `24 小时动作：${rebootText}`,
+      `处理建议：${actionHint(label, nextRuntime, settings)}`,
+      `时间：${formatNotifyTime(now, settings.timezone || 'Asia/Shanghai')}`,
+    ].join('\n'),
+  };
+}
+
 async function recordTransition(repo, notifier, server, oldState, nextRuntime, now, options = {}) {
   if (oldState === nextRuntime.state) return;
   const label = options.label || transitionLabel(oldState, nextRuntime.state);
   const level = eventLevel(nextRuntime.state);
-  const message = options.message || `${server.name}: ${oldState} -> ${nextRuntime.state}${label ? ` (${label})` : ''}`;
+  const name = displayServerName(server);
+  const message = options.message || `${name}: ${oldState} -> ${nextRuntime.state}${label ? ` (${label})` : ''}`;
+  const notice = buildTransitionNotice(server, oldState, nextRuntime, now, label, level, notifier.settings || {});
   await repo.addEvent({ server_id: server.id, old_state: oldState, new_state: nextRuntime.state, label, level, message, created_at: now });
-  await notifier.send(`[${server.name}] ${label || nextRuntime.state}`, message, level);
+  await notifier.send(notice.title, notice.message, level);
 }
 
 async function checkApiHealth(client, server, runtime, now) {
