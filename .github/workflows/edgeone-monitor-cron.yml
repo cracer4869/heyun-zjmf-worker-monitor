@@ -1,0 +1,40 @@
+name: EdgeOne Monitor Cron
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: edgeone-monitor-cron
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      EDGEONE_MONITOR_URL: ${{ secrets.EDGEONE_MONITOR_URL || vars.EDGEONE_MONITOR_URL }}
+      EDGEONE_ADMIN_TOKEN: ${{ secrets.EDGEONE_ADMIN_TOKEN || secrets.ZJMF_ADMIN_TOKEN }}
+    steps:
+      - name: Validate runtime configuration
+        shell: bash
+        run: |
+          test -n "$EDGEONE_MONITOR_URL" || (echo "Missing EDGEONE_MONITOR_URL secret or variable" && exit 1)
+          test -n "$EDGEONE_ADMIN_TOKEN" || (echo "Missing EDGEONE_ADMIN_TOKEN secret or ZJMF_ADMIN_TOKEN secret" && exit 1)
+
+      - name: Trigger monitor run
+        shell: bash
+        run: |
+          base_url="${EDGEONE_MONITOR_URL%/}"
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 15 \
+            --max-time 60 \
+            --retry 2 \
+            --retry-all-errors \
+            --request POST \
+            "$base_url/api/admin/run" \
+            --header "Authorization: Bearer $EDGEONE_ADMIN_TOKEN"
