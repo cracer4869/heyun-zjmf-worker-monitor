@@ -1,0 +1,139 @@
+name: EdgeOne Monitor Loop
+
+on:
+  workflow_dispatch:
+    inputs:
+      bootstrap_reason:
+        description: Source of the loop bootstrap
+        required: false
+        type: string
+      bootstrap_run_id:
+        description: Bootstrap workflow run ID
+        required: false
+        type: string
+      chain_depth:
+        description: Self-dispatch depth for diagnostics
+        required: false
+        default: "0"
+        type: string
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: edgeone-monitor-loop
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      EDGEONE_MONITOR_URL: ${{ secrets.EDGEONE_MONITOR_URL || vars.EDGEONE_MONITOR_URL }}
+      EDGEONE_ADMIN_TOKEN: ${{ secrets.EDGEONE_ADMIN_TOKEN || secrets.ZJMF_ADMIN_TOKEN }}
+      LOOP_WORKFLOW_FILE: edgeone-monitor-loop.yml
+      LOOP_INTERVAL_SECONDS: "300"
+      LOOP_MAX_RUNTIME_SECONDS: "21000"
+      LOOP_HANDOFF_SECONDS: "900"
+      LOOP_CHAIN_DEPTH: ${{ github.event.inputs.chain_depth || '0' }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Validate runtime configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$EDGEONE_MONITOR_URL" || (echo "Missing EDGEONE_MONITOR_URL secret or variable" && exit 1)
+          test -n "$EDGEONE_ADMIN_TOKEN" || (echo "Missing EDGEONE_ADMIN_TOKEN secret or ZJMF_ADMIN_TOKEN secret" && exit 1)
+
+      - name: Run monitor loop
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          base_url="${EDGEONE_MONITOR_URL%/}"
+          deadline="$(( $(date +%s) + LOOP_MAX_RUNTIME_SECONDS ))"
+          iteration=0
+          had_failure=0
+          handoff_dispatched=0
+
+          dispatch_handoff() {
+            if [ "$handoff_dispatched" -eq 1 ]; then
+              return 0
+            fi
+
+            next_depth="$(( LOOP_CHAIN_DEPTH + 1 ))"
+            payload="$(python -c "import json, os; depth=str(int(os.environ['LOOP_CHAIN_DEPTH']) + 1); print(json.dumps({'ref': os.environ['GITHUB_REF_NAME'], 'inputs': {'bootstrap_reason': 'handoff', 'bootstrap_run_id': os.environ['GITHUB_RUN_ID'], 'chain_depth': depth}}))")"
+
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer ${GH_TOKEN}" \
+              --header "Accept: application/vnd.github+json" \
+              --header "Content-Type: application/json" \
+              --data "$payload" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${LOOP_WORKFLOW_FILE}/dispatches"
+
+            handoff_dispatched=1
+            echo "Dispatched handoff run at depth ${next_depth}."
+          }
+
+          run_once() {
+            local started_at
+            started_at="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+
+            if ! response="$(curl --fail-with-body --silent --show-error \
+              --connect-timeout 15 \
+              --max-time 90 \
+              --retry 2 \
+              --retry-all-errors \
+              --request POST \
+              "${base_url}/api/admin/run" \
+              --header "Authorization: Bearer ${EDGEONE_ADMIN_TOKEN}")"; then
+              echo "Monitor run failed at ${started_at}."
+              had_failure=1
+              return 1
+            fi
+
+            echo "Monitor run ok at ${started_at}: ${response}"
+            return 0
+          }
+
+          while true; do
+            now="$(date +%s)"
+            remaining="$(( deadline - now ))"
+
+            if [ "$remaining" -le 0 ]; then
+              echo "Reached loop runtime deadline."
+              break
+            fi
+
+            if [ "$handoff_dispatched" -eq 0 ] && [ "$remaining" -le "$LOOP_HANDOFF_SECONDS" ]; then
+              dispatch_handoff
+            fi
+
+            iteration="$(( iteration + 1 ))"
+            echo "Iteration ${iteration}; remaining seconds: ${remaining}"
+            run_once || true
+
+            now="$(date +%s)"
+            remaining="$(( deadline - now ))"
+
+            if [ "$remaining" -le "$LOOP_INTERVAL_SECONDS" ]; then
+              if [ "$handoff_dispatched" -eq 0 ]; then
+                dispatch_handoff
+              fi
+              echo "Less than one interval remains; exiting loop."
+              break
+            fi
+
+            sleep "$LOOP_INTERVAL_SECONDS"
+          done
+
+          if [ "$handoff_dispatched" -eq 0 ]; then
+            dispatch_handoff
+          fi
+
+          if [ "$had_failure" -eq 1 ]; then
+            echo "One or more monitor iterations failed."
+            exit 1
+          fi
