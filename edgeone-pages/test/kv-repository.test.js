@@ -132,3 +132,18 @@ test('KVRepository 并发保存服务器和运行时不会互相覆盖', async (
   assert.equal(servers[0].name, '新名称');
   assert.equal(runtime.state, 'suspect');
 });
+
+test('KVRepository 运行租约同一时刻只允许一个持有者', async () => {
+  const repoA = new KVRepository(new MemoryKV());
+  const repoB = new KVRepository(repoA.kv);
+
+  const leaseA = await repoA.acquireRunLease('worker-a', 100, 60);
+  const leaseB = await repoB.acquireRunLease('worker-b', 100, 60);
+
+  assert.equal(leaseA.acquired, true);
+  assert.equal(leaseB.acquired, false);
+
+  await repoA.releaseRunLease('worker-a');
+  const leaseC = await repoB.acquireRunLease('worker-b', 101, 60);
+  assert.equal(leaseC.acquired, true);
+});

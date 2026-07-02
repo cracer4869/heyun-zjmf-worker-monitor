@@ -36,6 +36,7 @@ jobs:
       LOOP_INTERVAL_SECONDS: "300"
       LOOP_MAX_RUNTIME_SECONDS: "21000"
       LOOP_HANDOFF_SECONDS: "900"
+      LOOP_REQUEST_TIMEOUT_SECONDS: "180"
       LOOP_CHAIN_DEPTH: ${{ github.event.inputs.chain_depth || '0' }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -83,7 +84,7 @@ jobs:
 
             if ! response="$(curl --fail-with-body --silent --show-error \
               --connect-timeout 15 \
-              --max-time 90 \
+              --max-time "${LOOP_REQUEST_TIMEOUT_SECONDS}" \
               --retry 2 \
               --retry-all-errors \
               --request POST \
@@ -97,6 +98,9 @@ jobs:
             echo "Monitor run ok at ${started_at}: ${response}"
             return 0
           }
+
+          echo "Queue successor run early so the chain survives long monitor requests."
+          dispatch_handoff
 
           while true; do
             now="$(date +%s)"

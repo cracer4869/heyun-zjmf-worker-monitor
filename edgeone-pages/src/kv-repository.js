@@ -9,6 +9,7 @@ const RUNTIMES_KEY = 'zjmf_monitor_runtimes';
 const EVENTS_KEY = 'zjmf_monitor_events';
 const CHECK_RESULTS_KEY = 'zjmf_monitor_check_results';
 const META_KEY = 'zjmf_monitor_meta';
+const RUN_LEASE_KEY = 'zjmf_monitor_run_lease';
 
 function numberSetting(value, fallback) {
   const parsed = Number(value);
@@ -328,5 +329,29 @@ export class KVRepository {
     const events = (await this.listEvents(limit)).filter((event) => wanted.has(String(event.server_id)));
     for (const event of events) grouped.get(String(event.server_id))?.push(event);
     return grouped;
+  }
+
+  async acquireRunLease(owner, now = Math.floor(Date.now() / 1000), ttlSeconds = 600) {
+    const lease = await kvGetJson(this.kv, RUN_LEASE_KEY);
+    const leaseOwner = String(lease?.owner || '');
+    const expiresAt = Number(lease?.expires_at || 0);
+    if (leaseOwner && expiresAt > now && leaseOwner !== String(owner)) {
+      return { acquired: false, owner: leaseOwner, expires_at: expiresAt };
+    }
+    const next = {
+      owner: String(owner || 'edgeone-monitor'),
+      acquired_at: now,
+      expires_at: now + Math.max(1, Number(ttlSeconds || 600)),
+    };
+    await kvPutJson(this.kv, RUN_LEASE_KEY, next);
+    return { acquired: true, ...next };
+  }
+
+  async releaseRunLease(owner) {
+    const lease = await kvGetJson(this.kv, RUN_LEASE_KEY);
+    const leaseOwner = String(lease?.owner || '');
+    if (leaseOwner && owner && leaseOwner !== String(owner)) return false;
+    await kvPutJson(this.kv, RUN_LEASE_KEY, null);
+    return true;
   }
 }
