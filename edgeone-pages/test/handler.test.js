@@ -46,6 +46,18 @@ test('EdgeOne handler 使用 KV 管理接口', async () => {
   assert.equal(data.ok, true);
 });
 
+test('EdgeOne 管理接口返回 no-store 防止后台状态读到旧缓存', async () => {
+  const kv = new MemoryKV();
+  const env = { ADMIN_TOKEN: 'admin', ZJMF_KV: kv };
+  const res = await handleEdgeOneRequest(new Request('https://edgeone.example/api/admin/overview', {
+    headers: { authorization: 'Bearer admin' },
+  }), env);
+
+  assert.equal(res.status, 200);
+  assert.match(String(res.headers.get('cache-control') || ''), /no-store/);
+  assert.match(String(res.headers.get('pragma') || ''), /no-cache/);
+});
+
 test('EdgeOne handler 支持全局 KV 绑定变量', async () => {
   const kv = new MemoryKV();
   const previous = globalThis.ZJMF_KV;

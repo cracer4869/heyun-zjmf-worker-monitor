@@ -8,7 +8,11 @@ import { ZjmfClient } from './zjmf-client.js';
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'cache-control': 'no-store, no-cache, max-age=0, must-revalidate',
+      pragma: 'no-cache',
+    },
   });
 }
 
