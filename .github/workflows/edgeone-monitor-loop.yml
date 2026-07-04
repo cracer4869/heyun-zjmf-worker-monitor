@@ -37,6 +37,7 @@ jobs:
       LOOP_MAX_RUNTIME_SECONDS: "21000"
       LOOP_HANDOFF_SECONDS: "900"
       LOOP_REQUEST_TIMEOUT_SECONDS: "180"
+      LOOP_MAX_CONSECUTIVE_FAILURES: "3"
       LOOP_CHAIN_DEPTH: ${{ github.event.inputs.chain_depth || '0' }}
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -55,7 +56,8 @@ jobs:
           base_url="${EDGEONE_MONITOR_URL%/}"
           deadline="$(( $(date +%s) + LOOP_MAX_RUNTIME_SECONDS ))"
           iteration=0
-          had_failure=0
+          success_count=0
+          consecutive_failures=0
           handoff_dispatched=0
 
           dispatch_handoff() {
@@ -91,7 +93,6 @@ jobs:
               "${base_url}/api/admin/run" \
               --header "Authorization: Bearer ${EDGEONE_ADMIN_TOKEN}")"; then
               echo "Monitor run failed at ${started_at}."
-              had_failure=1
               return 1
             fi
 
@@ -117,7 +118,18 @@ jobs:
 
             iteration="$(( iteration + 1 ))"
             echo "Iteration ${iteration}; remaining seconds: ${remaining}"
-            run_once || true
+
+            if run_once; then
+              success_count="$(( success_count + 1 ))"
+              consecutive_failures=0
+            else
+              consecutive_failures="$(( consecutive_failures + 1 ))"
+              echo "Consecutive monitor failures: ${consecutive_failures}/${LOOP_MAX_CONSECUTIVE_FAILURES}"
+              if [ "$consecutive_failures" -ge "$LOOP_MAX_CONSECUTIVE_FAILURES" ]; then
+                echo "Reached consecutive monitor failure threshold."
+                break
+              fi
+            fi
 
             now="$(date +%s)"
             remaining="$(( deadline - now ))"
@@ -137,7 +149,12 @@ jobs:
             dispatch_handoff
           fi
 
-          if [ "$had_failure" -eq 1 ]; then
-            echo "One or more monitor iterations failed."
+          if [ "$success_count" -eq 0 ]; then
+            echo "Monitor loop completed without a successful iteration."
+            exit 1
+          fi
+
+          if [ "$consecutive_failures" -ge "$LOOP_MAX_CONSECUTIVE_FAILURES" ]; then
+            echo "Monitor loop ended after repeated consecutive failures."
             exit 1
           fi
