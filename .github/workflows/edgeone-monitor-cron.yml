@@ -41,7 +41,7 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             "$api_url")"
 
-          active_count="$(RESPONSE_JSON="$response" python -c "import json, os; data=json.loads(os.environ['RESPONSE_JSON']); active={'queued','in_progress','pending','requested','waiting'}; print(sum(1 for run in data.get('workflow_runs', []) if run.get('status') in active))")"
+          active_count="$(printf '%s' "$response" | python -c "import json, sys; data=json.load(sys.stdin); active={'queued','in_progress','pending','requested','waiting'}; print(sum(1 for run in data.get('workflow_runs', []) if run.get('status') in active))")"
 
           if [ "$active_count" -gt 0 ]; then
             echo "Monitor loop already active or queued on ${GITHUB_REF_NAME}; skip bootstrap dispatch."
