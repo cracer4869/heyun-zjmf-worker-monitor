@@ -83,8 +83,8 @@ export class Notifier {
         body: JSON.stringify(payloadFor(this.settings, title, message, level, this.nowSeconds)),
       });
       return { ok: response.ok, status: response.status };
-    } catch (error) {
-      return { ok: false, error: error?.message || String(error) };
+    } catch {
+      return { ok: false, error: 'NOTIFICATION_FAILED' };
     }
   }
 }

@@ -77,3 +77,11 @@
 - [ ] Replace placeholder D1 binding with an environment-driven ID/name contract that fails clearly when absent.
 - [ ] Ensure the workflow does not send a `Bearer `-prefixed token to Wrangler.
 - [ ] Run all Node tests, YAML/static checks, and read-only endpoint probes.
+
+### 收口验证记录（2026-07-13）
+
+- 已完成 Task 1-5；首个修复提交为 `e2639dd5b6764503c5ca17e76691e6caa785563a`。
+- EdgeOne 生产部署 `dpqw3x8rmwoy` 已上线，公开状态字段与安全响应头已验证。
+- 首轮 CodeQL 发现 `js/stack-trace-exposure`：通知网络异常的底层 `Error.message` 会经管理接口返回客户端。
+- 已用回归测试复现并改为稳定错误码 `NOTIFICATION_FAILED`，避免暴露内部主机、端口或调用细节。
+- Cloudflare 仅执行 dry-run；生产 Worker 发布及历史孤儿 D1 数据清理不在本次授权范围。
