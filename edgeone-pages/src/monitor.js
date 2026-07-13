@@ -139,7 +139,7 @@ function apiRecoveryAction(api) {
   if (api.ok === null) return 'none';
   const status = String(api.statusValue || '').trim().toLowerCase();
   if (status === 'off') return 'power_on';
-  if (status === 'on') return '';
+  if (status === 'on') return 'reboot';
   return 'reboot';
 }
 
@@ -171,9 +171,9 @@ async function checkServiceThenPower({ client, server, fetcher, tcpConnector, no
     return combinedProbe([http, tcp, api], { ok: true, error: '', recoveryAction: '' });
   }
   if (api.ok === null) {
-    return combinedProbe([http, tcp, api], { ok: null, recoveryAction: 'none' });
+    return combinedProbe([http, tcp, api], { ok: false, recoveryAction: 'none' });
   }
-  return combinedProbe([http, tcp, api], { ok: api.ok, error: '', recoveryAction: apiRecoveryAction(api) });
+  return combinedProbe([http, tcp, api], { ok: false, recoveryAction: apiRecoveryAction(api) });
 }
 
 export async function probeServer({ client, server, fetcher, tcpConnector, now }) {
@@ -185,15 +185,13 @@ export async function probeServer({ client, server, fetcher, tcpConnector, now }
     const http = await checkHttpHealth({ server, fetcher });
     if (http.ok) return http;
     const api = await checkApiHealth(client, server, {}, now);
-    if (api.ok === null) return api;
-    return combinedProbe([http, api], { ok: api.ok, error: '', recoveryAction: apiRecoveryAction(api) });
+    return combinedProbe([http, api], { ok: false, recoveryAction: apiRecoveryAction(api) });
   }
   if (method === 'tcp_then_api') {
     const tcp = await checkTcpHealth({ server, connector: tcpConnector });
     if (tcp.ok) return tcp;
     const api = await checkApiHealth(client, server, {}, now);
-    if (api.ok === null) return api;
-    return combinedProbe([tcp, api], { ok: api.ok, error: '', recoveryAction: apiRecoveryAction(api) });
+    return combinedProbe([tcp, api], { ok: false, recoveryAction: apiRecoveryAction(api) });
   }
   return await checkApiHealth(client, server, {}, now);
 }

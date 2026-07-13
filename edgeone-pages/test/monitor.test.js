@@ -53,7 +53,7 @@ test('EdgeOne 兼容纯文本 on/off 状态', () => {
   assert.equal(extractStatus(' off '), 'off');
 });
 
-test('EdgeOne HTTP+API 在 HTTP 失败但 API 为 on 时判定正常', async () => {
+test('EdgeOne HTTP+API 在 HTTP 失败但 API 为 on 时仍判定业务异常', async () => {
   const repo = new FakeRepo({
     settings,
     providers: { heyun: { name: 'heyun', api_base_url: 'https://api.example/v1', jwt_token: 'jwt', jwt_expire_at: 9999999999 } },
@@ -68,11 +68,11 @@ test('EdgeOne HTTP+API 在 HTTP 失败但 API 为 on 时判定正常', async () 
 
   await runMonitorOnce({ repo, fetcher, now: 1778382000 });
 
-  assert.equal(repo.data.runtimes['4075'].state, 'healthy');
+  assert.equal(repo.data.runtimes['4075'].state, 'recovering');
   assert.equal(repo.data.runtimes['4075'].last_status_value, 'HTTP 503 -> on');
 });
 
-test('EdgeOne 三步检测在 HTTP TCP 失败但 API 为 on 时判定正常', async () => {
+test('EdgeOne 三步检测在 HTTP TCP 失败但 API 为 on 时触发重启恢复', async () => {
   const repo = new FakeRepo({
     settings,
     providers: { heyun: { name: 'heyun', api_base_url: 'https://api.example/v1', jwt_token: 'jwt', jwt_expire_at: 9999999999 } },
@@ -90,8 +90,8 @@ test('EdgeOne 三步检测在 HTTP TCP 失败但 API 为 on 时判定正常', as
 
   await runMonitorOnce({ repo, fetcher, tcpConnector: async () => false, now: 1778382000 });
 
-  assert.equal(repo.data.runtimes['4075'].state, 'healthy');
-  assert.equal(calls.some((url) => url.includes('/hard_reboot')), false);
+  assert.equal(repo.data.runtimes['4075'].state, 'recovering');
+  assert.equal(calls.some((url) => url.includes('/hard_reboot')), true);
 });
 
 test('EdgeOne API 请求失败时返回 null 且不推进异常计数', async () => {

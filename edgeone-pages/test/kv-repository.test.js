@@ -53,6 +53,16 @@ class RaceKV {
   }
 }
 
+class LeaseHijackKV extends MemoryKV {
+  async put(key, value) {
+    await super.put(key, value);
+    if (key === 'zjmf_monitor_run_lease' && value) {
+      const lease = JSON.parse(value);
+      await super.put(key, JSON.stringify({ ...lease, owner: 'other-worker' }));
+    }
+  }
+}
+
 test('KVRepository 保存服务商、服务器和设置', async () => {
   const repo = new KVRepository(new MemoryKV());
   await repo.setSetting('setup_completed', '1');
@@ -88,6 +98,15 @@ test('KVRepository 生成状态页所需历史和事件', async () => {
   assert.equal(recent[0].ok, true);
   assert.equal(daily.get('1001')[0].checks, 1);
   assert.equal(events.get('1001')[0].label, '检测异常');
+});
+
+test('KVRepository 将失败的重启动作计入限额', async () => {
+  const repo = new KVRepository(new MemoryKV());
+  await repo.addEvent({ server_id: '1001', old_state: 'down', new_state: 'rebooting', label: '触发重启', level: 'critical', message: '尝试 1', created_at: 100 });
+  await repo.addEvent({ server_id: '1001', old_state: 'rebooting', new_state: 'recovering', label: '重启指令已发送', level: 'warning', message: '成功', created_at: 110 });
+  await repo.addEvent({ server_id: '1001', old_state: 'down', new_state: 'rebooting', label: '触发重启', level: 'critical', message: '尝试 2', created_at: 120 });
+
+  assert.equal(await repo.countRecentReboots('1001', 90), 2);
 });
 
 test('KVRepository 并发保存服务器和运行时不会互相覆盖', async () => {
@@ -146,4 +165,13 @@ test('KVRepository 运行租约同一时刻只允许一个持有者', async () =
   await repoA.releaseRunLease('worker-a');
   const leaseC = await repoB.acquireRunLease('worker-b', 101, 60);
   assert.equal(leaseC.acquired, true);
+});
+
+test('KVRepository 租约写入后所有权被覆盖时返回未获取', async () => {
+  const repo = new KVRepository(new LeaseHijackKV());
+
+  const lease = await repo.acquireRunLease('worker-a', 100, 60);
+
+  assert.equal(lease.acquired, false);
+  assert.equal(lease.owner, 'other-worker');
 });

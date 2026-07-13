@@ -58,6 +58,19 @@ test('EdgeOne 管理接口返回 no-store 防止后台状态读到旧缓存', as
   assert.match(String(res.headers.get('pragma') || ''), /no-cache/);
 });
 
+test('EdgeOne 页面和 API 返回安全响应头', async () => {
+  const env = { ADMIN_TOKEN: 'admin', ZJMF_KV: new MemoryKV() };
+  const page = await handleEdgeOneRequest(new Request('https://edgeone.example/'), env);
+  const api = await handleEdgeOneRequest(new Request('https://edgeone.example/api/status'), env);
+
+  for (const res of [page, api]) {
+    assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
+    assert.equal(res.headers.get('x-frame-options'), 'DENY');
+    assert.equal(res.headers.get('referrer-policy'), 'no-referrer');
+    assert.match(res.headers.get('content-security-policy') || '', /default-src 'self'/);
+  }
+});
+
 test('EdgeOne handler 支持全局 KV 绑定变量', async () => {
   const kv = new MemoryKV();
   const previous = globalThis.ZJMF_KV;
@@ -383,6 +396,36 @@ test('EdgeOne 公共状态接口隐藏不在状态页显示的服务器', async 
 
   assert.equal(res.status, 200);
   assert.equal(data.servers.length, 0);
+});
+
+test('EdgeOne 公共状态接口仅返回脱敏字段和有限历史', async () => {
+  const kv = new MemoryKV();
+  kv.map.set('zjmf_monitor_servers', JSON.stringify([{
+    id: '8479', name: '真实套餐名称', provider: 'account-derived-provider', enabled: true,
+    check_method: 'http_then_api', daily_reboot_limit: 3, visible_on_status: true,
+    http_url: 'https://private.example/health', tcp_host: 'private.example',
+  }]));
+  kv.map.set('zjmf_monitor_runtimes', JSON.stringify({
+    8479: { state: 'healthy', last_check_time: 200, last_reboot_time: 100, reboot_count_today: 1, last_status_value: 'HTTP 200' },
+  }));
+  kv.map.set('zjmf_monitor_events', JSON.stringify([{
+    id: 9, server_id: '8479', old_state: 'down', new_state: 'rebooting', label: '触发重启', level: 'critical', message: 'private detail', created_at: 100,
+  }]));
+  kv.map.set('zjmf_monitor_check_results', JSON.stringify(Array.from({ length: 20 }, (_, index) => ({
+    id: index + 1, server_id: '8479', ok: true, latency_ms: 10 + index, created_at: 100 + index,
+  }))));
+
+  const res = await handleEdgeOneRequest(new Request('https://edgeone.example/api/status'), { ADMIN_TOKEN: 'admin', ZJMF_KV: kv });
+  const data = await res.json();
+  const server = data.servers[0];
+
+  assert.equal(server.id, 'monitor-1');
+  assert.equal(server.name, '监控项 1');
+  assert.equal(Object.hasOwn(server, 'provider'), false);
+  assert.equal(Object.hasOwn(server, 'daily_reboot_limit'), false);
+  assert.equal(Object.hasOwn(server.events[0], 'server_id'), false);
+  assert.equal(Object.hasOwn(server.events[0], 'old_state'), false);
+  assert.equal(server.recent_checks.length, 12);
 });
 
 test('EdgeOne 后台系统设置支持 GitHub 仓库字段', async () => {

@@ -100,9 +100,6 @@ jobs:
             return 0
           }
 
-          echo "Queue successor run early so the chain survives long monitor requests."
-          dispatch_handoff
-
           while true; do
             now="$(date +%s)"
             remaining="$(( deadline - now ))"

@@ -141,11 +141,19 @@ async function probeServer({ client, server, fetcher, tcpConnector, now }) {
   if (method === 'service_then_power') return await checkServiceThenPower({ client, server, fetcher, tcpConnector, now });
   if (method === 'http_then_api') {
     const http = await checkHttpHealth({ server, fetcher });
-    return http.ok ? http : await checkApiHealth(client, server, {}, now);
+    if (http.ok) return http;
+    const api = await checkApiHealth(client, server, {}, now);
+    const status = String(api.statusValue || '').trim().toLowerCase();
+    const recoveryAction = status === 'off' ? 'power_on' : status === 'on' ? 'reboot' : 'none';
+    return combinedProbe([http, api], { ok: false, recoveryAction });
   }
   if (method === 'tcp_then_api') {
     const tcp = await checkTcpHealth({ server, connector: tcpConnector });
-    return tcp.ok ? tcp : await checkApiHealth(client, server, {}, now);
+    if (tcp.ok) return tcp;
+    const api = await checkApiHealth(client, server, {}, now);
+    const status = String(api.statusValue || '').trim().toLowerCase();
+    const recoveryAction = status === 'off' ? 'power_on' : status === 'on' ? 'reboot' : 'none';
+    return combinedProbe([tcp, api], { ok: false, recoveryAction });
   }
   return await checkApiHealth(client, server, {}, now);
 }

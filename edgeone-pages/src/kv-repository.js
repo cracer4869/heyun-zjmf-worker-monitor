@@ -272,8 +272,8 @@ export class KVRepository {
   async countRecentReboots(serverId, since) {
     const events = await this.readSection(EVENTS_KEY, 'events', []);
     return events.filter((event) => String(event.server_id) === String(serverId)
-      && event.old_state === 'rebooting'
-      && event.new_state === 'recovering'
+      && event.old_state === 'down'
+      && event.new_state === 'rebooting'
       && Number(event.created_at || 0) >= since).length;
   }
 
@@ -344,6 +344,10 @@ export class KVRepository {
       expires_at: now + Math.max(1, Number(ttlSeconds || 600)),
     };
     await kvPutJson(this.kv, RUN_LEASE_KEY, next);
+    const confirmed = await kvGetJson(this.kv, RUN_LEASE_KEY);
+    if (String(confirmed?.owner || '') !== next.owner) {
+      return { acquired: false, owner: String(confirmed?.owner || ''), expires_at: Number(confirmed?.expires_at || 0) };
+    }
     return { acquired: true, ...next };
   }
 

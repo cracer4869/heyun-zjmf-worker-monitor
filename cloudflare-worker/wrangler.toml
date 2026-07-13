@@ -1,4 +1,4 @@
-name = "heyun-zjmf-worker-monitor"
+name = "zjmf-monitor-nas"
 main = "src/index.js"
 compatibility_date = "2026-05-10"
 
@@ -10,5 +10,5 @@ crons = ["*/5 * * * *"]
 
 [[d1_databases]]
 binding = "DB"
-database_name = "zjmf-monitor"
-database_id = "replace-with-your-d1-database-id"
+database_name = "zjmf-monitor-nas"
+database_id = "dc822fed-e252-4c3c-a22f-f09cc1e63884"

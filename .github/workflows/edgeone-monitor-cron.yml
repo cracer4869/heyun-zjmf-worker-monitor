@@ -2,7 +2,7 @@ name: EdgeOne Monitor Bootstrap
 
 on:
   schedule:
-    - cron: "2/5 * * * *"
+    - cron: "17,47 * * * *"
   workflow_dispatch:
 
 permissions:

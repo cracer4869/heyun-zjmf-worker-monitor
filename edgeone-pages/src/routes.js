@@ -5,14 +5,26 @@ import { renderAdminPage } from './admin-page.js';
 import { renderStatusPage } from './status-page.js';
 import { ZjmfClient } from './zjmf-client.js';
 
+const SECURITY_HEADERS = Object.freeze({
+  'content-security-policy': "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://api.github.com; img-src 'self' data:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+  'referrer-policy': 'no-referrer',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+  'x-content-type-options': 'nosniff',
+  'x-frame-options': 'DENY',
+});
+
+function responseHeaders(headers = {}) {
+  return { ...SECURITY_HEADERS, ...headers };
+}
+
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: {
+    headers: responseHeaders({
       'content-type': 'application/json; charset=utf-8',
       'cache-control': 'no-store, no-cache, max-age=0, must-revalidate',
       pragma: 'no-cache',
-    },
+    }),
   });
 }
 
@@ -65,9 +77,22 @@ function serverDisplayName(server) {
   return isIpAddress(server.name) || isIpAddress(server.ip) ? `服务器 #${server.id}` : server.name;
 }
 
-function publicServer(server) {
+function statusServer(server) {
   const { ip: _ip, http_url: _httpUrl, tcp_host: _tcpHost, visible_on_status: _visible, ...rest } = server;
   return { ...rest, name: serverDisplayName(server) };
+}
+
+function publicServer(server, index) {
+  return {
+    id: `monitor-${index + 1}`,
+    name: `监控项 ${index + 1}`,
+    check_method: server.check_method || 'api_only',
+    state: server.state || 'unknown',
+    last_check_time: Number(server.last_check_time || 0),
+    last_reboot_time: Number(server.last_reboot_time || 0),
+    reboot_count_today: Number(server.reboot_count_today || 0),
+    last_latency_ms: Number(server.last_latency_ms || 0),
+  };
 }
 
 function adminServer(server) {
@@ -76,8 +101,8 @@ function adminServer(server) {
 }
 
 function publicEvent(event) {
-  const { id, server_id, old_state, new_state, label, level, created_at } = event;
-  return { id, server_id, old_state, new_state, label, level, created_at };
+  const { label, level, created_at } = event;
+  return { label, level, created_at };
 }
 
 function adminServers(servers, status) {
@@ -202,7 +227,7 @@ function adminHost(host) {
 }
 
 async function publicStatus(repo) {
-  const servers = (await repo.listStatus()).filter(visibleOnStatus).map(publicServer);
+  const servers = (await repo.listStatus()).filter(visibleOnStatus);
   const ids = servers.map((server) => String(server.id));
   const daily = await repo.listDailyHistory(ids);
   const events = await repo.listPublicEvents(ids);
@@ -210,11 +235,11 @@ async function publicStatus(repo) {
   for (const server of servers) {
     recent.set(String(server.id), await repo.listRecentChecks(server.id));
   }
-  return servers.map((server) => ({
-    ...server,
+  return servers.map((server, index) => ({
+    ...publicServer(server, index),
     daily_history: daily.get(String(server.id)) || [],
     events: (events.get(String(server.id)) || []).map(publicEvent),
-    recent_checks: recent.get(String(server.id)) || [],
+    recent_checks: (recent.get(String(server.id)) || []).slice(0, 12),
   }));
 }
 
@@ -226,17 +251,17 @@ export async function handleRequest(request, env) {
   if ((url.pathname === '/' || url.pathname === '/status') && request.method === 'GET') {
     if (url.pathname === '/' && (await repo.getSetting('setup_completed', '0')) !== '1') {
       return new Response(renderAdminPage({ showIntro: true }), {
-        headers: { 'content-type': 'text/html; charset=utf-8' },
+        headers: responseHeaders({ 'content-type': 'text/html; charset=utf-8' }),
       });
     }
     return new Response(renderStatusPage(await publicStatus(repo), await repo.getSettings()), {
-      headers: { 'content-type': 'text/html; charset=utf-8' },
+      headers: responseHeaders({ 'content-type': 'text/html; charset=utf-8' }),
     });
   }
 
   if (url.pathname === '/admin' && request.method === 'GET') {
     return new Response(renderAdminPage({ showIntro: (await repo.getSetting('setup_completed', '0')) !== '1' }), {
-      headers: { 'content-type': 'text/html; charset=utf-8' },
+      headers: responseHeaders({ 'content-type': 'text/html; charset=utf-8' }),
     });
   }
 
@@ -249,7 +274,7 @@ export async function handleRequest(request, env) {
 
   if (url.pathname === '/api/admin/overview' && request.method === 'GET') {
     const settings = await repo.getSettings();
-    const status = (await repo.listStatus()).map(publicServer);
+    const status = (await repo.listStatus()).map(statusServer);
     return json({
       settings: {
         ...settings,

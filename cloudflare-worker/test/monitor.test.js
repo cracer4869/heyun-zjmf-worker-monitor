@@ -181,6 +181,25 @@ test('runMonitorOnce 支持 HTTP 检测并在第 3 次失败后重启', async ()
   assert.equal(repo.data.runtimes['4075'].last_status_value, 'HTTP 503');
 });
 
+test('runMonitorOnce HTTP+API 不会用电源 on 掩盖 HTTP 业务故障', async () => {
+  const repo = new FakeRepo({
+    settings: { suspect_threshold: 3, reboot_cooldown: 300, recover_timeout: 300, default_daily_reboot_limit: 3, api_timeout: 60, timezone: 'Asia/Shanghai', check_interval: 300 },
+    providers: { heyun: { name: 'heyun', api_base_url: 'https://api.example/v1', jwt_token: 'jwt', jwt_expire_at: 9999999999 } },
+    servers: [{ id: '4075', name: 'Web', provider: 'heyun', check_method: 'http_then_api', http_url: 'https://web.example/health', daily_reboot_limit: 3 }],
+    runtimes: { 4075: null },
+  });
+  const fetcher = async (url) => {
+    if (String(url).includes('web.example')) return new Response('gateway timeout', { status: 504 });
+    if (String(url).includes('/module/status')) return new Response(JSON.stringify({ data: { status: 'on' } }));
+    return new Response(JSON.stringify({ jwt: 'jwt' }));
+  };
+
+  await runMonitorOnce({ repo, fetcher, now: 1778382000 });
+
+  assert.equal(repo.data.runtimes['4075'].state, 'suspect');
+  assert.equal(repo.data.runtimes['4075'].last_status_value, 'HTTP 504 -> on');
+});
+
 test('runMonitorOnce 支持 TCP 端口检测成功', async () => {
   const repo = new FakeRepo({
     settings: { suspect_threshold: 3, reboot_cooldown: 300, recover_timeout: 300, default_daily_reboot_limit: 3, api_timeout: 60, timezone: 'Asia/Shanghai', check_interval: 300 },
