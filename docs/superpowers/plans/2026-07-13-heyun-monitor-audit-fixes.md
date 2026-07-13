@@ -22,8 +22,8 @@
 - Create: `edgeone-pages/src/status-page.js`
 - Test: `edgeone-pages/test/*.test.js`
 
-- [ ] Copy the corresponding implementations from `upstream/main` and preserve the fork's current imports.
-- [ ] Run `node --test edgeone-pages/test/*.test.js` and verify the tests start before changing behavior.
+- [x] Copy the corresponding implementations from `upstream/main` and preserve the fork's current imports.
+- [x] Run `node --test edgeone-pages/test/*.test.js` and verify the tests start before changing behavior.
 
 ### Task 2: Enforce failed-action limits
 
@@ -33,9 +33,9 @@
 - Modify: `edgeone-pages/src/state-machine.js`
 - Test: `edgeone-pages/test/monitor.test.js`
 
-- [ ] Add a failing test where a failed reboot attempt counts toward the configured window.
-- [ ] Make `countRecentReboots` count every `down -> rebooting` action event, not only successful recovery.
-- [ ] Run the focused test, then the full EdgeOne suite.
+- [x] Add a failing test where a failed reboot attempt counts toward the configured window.
+- [x] Make `countRecentReboots` count every `down -> rebooting` action event, not only successful recovery.
+- [x] Run the focused test, then the full EdgeOne suite.
 
 ### Task 3: Separate business health from power state
 
@@ -45,9 +45,9 @@
 - Test: `edgeone-pages/test/monitor.test.js`
 - Test: `cloudflare-worker/test/monitor.test.js`
 
-- [ ] Add failing tests for HTTP 504 plus API `on` remaining unhealthy.
-- [ ] Implement explicit service-health precedence while retaining power-on/reboot action selection.
-- [ ] Run both focused suites and then all tests.
+- [x] Add failing tests for HTTP 504 plus API `on` remaining unhealthy.
+- [x] Implement explicit service-health precedence while retaining power-on/reboot action selection.
+- [x] Run both focused suites and then all tests.
 
 ### Task 4: Reduce scheduling and public data risk
 
@@ -61,10 +61,10 @@
 - Test: `edgeone-pages/test/handler.test.js`
 - Test: `edgeone-pages/test/kv-repository.test.js`
 
-- [ ] Add failing assertions for anonymous status field allowlisting and lease ownership.
-- [ ] Remove the duplicate private Cron workflow from the repository if present, and keep one bootstrap/loop chain.
-- [ ] Add security headers and minimize public fields.
-- [ ] Restrict deploy workflow permissions and pin action references to immutable SHAs where available.
+- [x] Add failing assertions for anonymous status field allowlisting and lease ownership.
+- [x] Remove the duplicate private Cron workflow from the repository if present, and keep one bootstrap/loop chain.
+- [x] Add security headers and minimize public fields.
+- [x] Restrict deploy workflow permissions and pin action references to immutable SHAs where available.
 
 ### Task 5: Correct Cloudflare configuration and verify
 
@@ -74,14 +74,14 @@
 - Modify: `.github/workflows/deploy.yml`
 - Test: `cloudflare-worker/test/*.test.js`
 
-- [ ] Replace placeholder D1 binding with an environment-driven ID/name contract that fails clearly when absent.
-- [ ] Ensure the workflow does not send a `Bearer `-prefixed token to Wrangler.
-- [ ] Run all Node tests, YAML/static checks, and read-only endpoint probes.
+- [x] Replace placeholder D1 binding with an environment-driven ID/name contract that fails clearly when absent.
+- [x] Ensure the workflow does not send a `Bearer `-prefixed token to Wrangler.
+- [x] Run all Node tests, YAML/static checks, and read-only endpoint probes.
 
 ### 收口验证记录（2026-07-13）
 
 - 已完成 Task 1-5；首个修复提交为 `e2639dd5b6764503c5ca17e76691e6caa785563a`。
-- EdgeOne 生产部署 `dpqw3x8rmwoy` 已上线，公开状态字段与安全响应头已验证。
+- EdgeOne 最终生产部署 `dpwca6148oxu` 已上线，公开状态字段与安全响应头已验证。
 - 首轮 CodeQL 发现 `js/stack-trace-exposure`：通知网络异常的底层 `Error.message` 会经管理接口返回客户端。
 - 已用回归测试复现并改为稳定错误码 `NOTIFICATION_FAILED`，避免暴露内部主机、端口或调用细节。
 - Cloudflare 仅执行 dry-run；生产 Worker 发布及历史孤儿 D1 数据清理不在本次授权范围。
